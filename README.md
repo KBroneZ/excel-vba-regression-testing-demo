@@ -8,7 +8,7 @@ There is no Kit code here, only the recorded demo, the text of a run and an expl
 
 [![A frame of the launch teaser: the changed macro run on a copy, Mismatch: 8 differences, EXIT 1](demo/teaser-poster.jpg)](https://steadylatch.com/#teaser)
 
-*The 24-second teaser on [steadylatch.com](https://steadylatch.com/#teaser): one deleted character, and the Kit lists the cells that changed. Every terminal line in it comes from the recorded demo.*
+*The 24-second teaser on [steadylatch.com](https://steadylatch.com/#teaser), with an AI-generated voice-over: one deleted character, and the Kit lists the cells that changed. Every terminal line in it comes from the recorded demo.*
 
 [![A frame of the demo: the output of a changed macro compared with the approved golden, eight differences listed cell by cell](demo/poster.jpg)](https://steadylatch.com/#demo)
 
@@ -26,6 +26,15 @@ Freelancers and small studios who maintain Excel/VBA automations. An input colum
 | **E2** | The API fails | The client retries only what is worth retrying, within a time budget, never leaves a partial output, and network and contract problems get different exit codes. | CI and locally |
 | **E3** | A macro changes | The output of the changed macro is compared cell by cell with an approved golden. The demo's bug, a date filter that drops the last day of the month, shows up as 8 differences. | The macro runs locally; the comparison also runs in CI |
 | **E4** | A new version is delivered | The VBA is exported to text with an environment manifest, packed with the workbook and checksums, and the previous version is restored and checked with the runner and the golden. Pro and Consultant licenses only. | Locally; packaging and restore need no Excel |
+
+### Scenario clips
+
+One short clip per scenario on [steadylatch.com](https://steadylatch.com/#kit), 15 to 18 seconds each, with an AI-generated voice-over and music. Every terminal line in them comes from the recorded demo, some shortened with an ellipsis (…).
+
+| | |
+|---|---|
+| [![E1 clip: Amount became Amt. The check stops the run. EXIT 1](demo/e1-contract-poster.jpg)](https://steadylatch.com/#clip-e1) **E1** · input contract | [![E2 clip: API timeout? Three tries. No partial output. EXIT 4](demo/e2-api-poster.jpg)](https://steadylatch.com/#clip-e2) **E2** · API client |
+| [![E3 clip: 8 differences from one changed character. EXIT 1](demo/e3-macro-poster.jpg)](https://steadylatch.com/#clip-e3) **E3** · regression check | [![E4 clip: 1.1.0 has the bug. Go back to 1.0.0](demo/e4-delivery-poster.jpg)](https://steadylatch.com/#clip-e4) **E4** · delivery and recovery |
 
 Commands and output of each scenario: [docs/scenarios.md](docs/scenarios.md). The whole run as plain text: [demo/transcript.txt](demo/transcript.txt).
 
