@@ -1,0 +1,238 @@
+
+
+
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+   SteadyLatch Automation Reliability Kit 1.0.0-rc1, the release candidate of v1
+   Check a change before you deliver it.
+   Four scenarios, synthetic data of an invented shop, real commands and output.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ E1  An input column is renamed (Amount -> Amt)
+The data contract stops it before anything runs.
+
+> pwsh -File bin/steadylatch-check.ps1 -ContractPath demo/contracts/sales-csv.contract.json -ReportDirectory out/reports -DataPath demo/fixtures/e1/sales-e1a-renamed-column.csv
+contract shop-sales-csv: Invalid (6 rows, 1 violations)
+  data: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\fixtures\e1\sales-e1a-renamed-column.csv
+  - sales-e1a-renamed-column.csv: required column 'Amount' is missing. Columns found: OrderId, OrderDate, Store, Product, Quantity, UnitPrice, Amt, Discount, GiftWrap.
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\sales-csv.contract.report.json
+ EXIT 1  fail
+
+Variant B: one amount is empty.
+
+> pwsh -File bin/steadylatch-check.ps1 -ContractPath demo/contracts/sales-csv.contract.json -ReportDirectory out/reports -DataPath demo/fixtures/e1/sales-e1b-empty-amount.csv
+contract shop-sales-csv: Invalid (6 rows, 1 violations)
+  data: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\fixtures\e1\sales-e1b-empty-amount.csv
+  - sales-e1b-empty-amount.csv: row 3 (line 4), column 'Amount' is empty; this column requires a value.
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\sales-csv.contract.report.json
+ EXIT 1  fail
+
+│ Empty is reported as empty, not as 0. Only the check's own report is written.
+
+ E2  The API fails
+A local mock on 127.0.0.1 serves the sales, or fails on purpose.
+
+> pwsh -File bin/steadylatch-check.ps1 -ReportDirectory out/reports -ApiConfigPath demo/api/sales-good.api.json
+api lumen-sales-good: Valid (GET http://127.0.0.1:18080/good/v1/sales?month=2026-09, 1 attempt(s))
+  lumen-sales-good response: satisfies the contract shop-sales-json; written to sales-2026-09.json
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\sales-2026-09.json
+  log: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\api.log.jsonl (correlation id 51c7e16509874674bcb69dde6b5cab20)
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-sales-good.api-report.json
+ EXIT 0  pass
+
+> Get-FileHash out/api/sales-2026-09.json | Select-Object -ExpandProperty Hash
+F581F1189A5CF390AC9326BE835DF7D24A6AF3F1AB65DE2BE8629C9044C936C1
+
+(a) Timeout: 3 attempts of 2 s, waits of 1 s and 2 s, then exit 4.
+
+> pwsh -File bin/steadylatch-check.ps1 -ReportDirectory out/reports -ApiConfigPath demo/api/e2a-timeout.api.json
+api lumen-e2a-timeout: Failed (GET http://127.0.0.1:18080/slow/v1/sales?month=2026-09, 3 attempt(s))
+  gave up after 3 attempt(s) (retry.maxAttempts); last attempt: no complete response within 2 s
+  log: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\api.log.jsonl (correlation id 21d044500bb2429cbf44b8dce66e9596)
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-e2a-timeout.api-report.json
+ EXIT 4  fail
+
+(b) 429 with Retry-After: 2 s. It waits, then retries.
+
+> pwsh -File bin/steadylatch-check.ps1 -ReportDirectory out/reports -ApiConfigPath demo/api/e2b-rate-limited.api.json
+api lumen-e2b-rate-limited: Valid (GET http://127.0.0.1:18080/rate-limited/v1/sales?month=2026-09&retryAfter=[REDACTED]&times=[REDACTED], 2 attempt(s))
+  lumen-e2b-rate-limited response: satisfies the contract shop-sales-json; written to sales-2026-09.json
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\sales-2026-09.json
+  log: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\api.log.jsonl (correlation id 282ce9dfa3eb42e5b11858fe9b15df48)
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-e2b-rate-limited.api-report.json
+ EXIT 0  pass
+ E2  The API fails (continued)
+
+(c) HTML instead of JSON: not retried, exit 4.
+
+> pwsh -File bin/steadylatch-check.ps1 -ReportDirectory out/reports -ApiConfigPath demo/api/e2c-not-json.api.json
+api lumen-e2c-not-json: Failed (GET http://127.0.0.1:18080/not-json/v1/sales?month=2026-09, 1 attempt(s))
+  lumen-e2c-not-json response: the body is not valid JSON at line 1: '<' is an invalid start of a value. (Content-Type: text/html; charset=utf-8)
+  log: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\api.log.jsonl (correlation id bc3f1c8a6b824129a0da35ba3f3679c0)
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-e2c-not-json.api-report.json
+ EXIT 4  fail
+
+(d) Valid JSON that breaks the contract: a contract error, exit 1, not 4.
+
+> pwsh -File bin/steadylatch-check.ps1 -ReportDirectory out/reports -ApiConfigPath demo/api/e2d-missing-field.api.json
+api lumen-e2d-missing-field: Invalid (GET http://127.0.0.1:18080/missing-field/v1/sales?month=2026-09, 1 attempt(s))
+  lumen-e2d-missing-field response: breaks the contract shop-sales-json (1 violations); nothing was written
+  - lumen-e2d-missing-field response: required field 'Amount' is missing from every record. Fields found: OrderId, OrderDate, Store, Product, Quantity, UnitPrice, Amt, Discount, GiftWrap.
+  log: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\api\api.log.jsonl (correlation id d974760c45b14c0cb47cf8405747c955)
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-e2d-missing-field.api-report.json
+ EXIT 1  fail
+ E2  The API fails (continued)
+
+The log of run (a), its request headers, and the saved file's hash after the failures:
+
+> Get-Content out/api/api.log.jsonl | ConvertFrom-Json -DateKind String | Where-Object name -eq 'lumen-e2a-timeout' | Format-Table time, event, attempt, status, durationMs, reason
+time                     event     attempt status durationMs reason
+----                     -----     ------- ------ ---------- ------
+2026-10-03T15:18:55.357Z run-start                           
+2026-10-03T15:18:57.429Z attempt   1              2028       Timeout
+2026-10-03T15:18:57.453Z wait      1                         
+2026-10-03T15:19:00.476Z attempt   2              2012       Timeout
+2026-10-03T15:19:00.476Z wait      2                         
+2026-10-03T15:19:04.493Z attempt   3              2009       Timeout
+2026-10-03T15:19:04.542Z run-end                  9183       
+
+> (Get-Content out/api/api.log.jsonl -TotalCount 1 | ConvertFrom-Json).requestHeaders
+Accept           Authorization X-Correlation-Id
+------           ------------- ----------------
+application/json [REDACTED]    51c7e16509874674bcb69dde6b5cab20
+
+> Get-FileHash out/api/sales-2026-09.json | Select-Object -ExpandProperty Hash
+F581F1189A5CF390AC9326BE835DF7D24A6AF3F1AB65DE2BE8629C9044C936C1
+
+│ One JSON line per event. Authorization is redacted; the token is never written.
+│ No failing run changed the saved output.
+
+ E3  A macro changes
+The real macro runs in Excel on a copy of the workbook.
+Its output is compared with the approved golden.
+
+> pwsh -File bin/steadylatch-check.ps1 -ConfigPath demo/compare/monthly-report-xlsx.compare.json -GoldenPath demo/golden/monthly-report-2026-09.xlsx -ReportDirectory out/reports -ExcelConfigPath demo/excel/monthly-report.excel.json
+excel monthly-report: Succeeded (macro BuildMonthlyReport of lumen-monthly-report.xlsm)
+  macro 'BuildMonthlyReport' of 'lumen-monthly-report.xlsm' ran on a copy; sheet 'Report' saved to monthly-report.xlsx
+  Excel 16.0 build 20430, 64-bit, UI language 1033, decimal separator ','; process ended-by-runner
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\excel\monthly-report.xlsx
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report.excel-report.json
+compare monthly-report-xlsx: Match: 0 differences (1 within tolerance)
+  golden: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\golden\monthly-report-2026-09.xlsx
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\excel\monthly-report.xlsx
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-xlsx.report.md
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-xlsx.report.json
+ EXIT 0  pass
+
+The copy with a bug differs in one line: the date filter drops the last day of the month.
+
+> git diff --no-index demo/workbook/vba/lumen-monthly-report demo/workbook/vba/lumen-monthly-report-last-day-bug
+    -        If orderDate >= firstDay And orderDate <= lastDay Then
+    +        If orderDate >= firstDay And orderDate < lastDay Then
+
+> pwsh -File bin/steadylatch-check.ps1 -ConfigPath demo/compare/monthly-report-xlsx.compare.json -GoldenPath demo/golden/monthly-report-2026-09.xlsx -ReportDirectory out/reports -ExcelConfigPath demo/excel/monthly-report-last-day-bug.excel.json
+excel monthly-report-last-day-bug: Succeeded (macro BuildMonthlyReport of lumen-monthly-report-last-day-bug.xlsm)
+  macro 'BuildMonthlyReport' of 'lumen-monthly-report-last-day-bug.xlsm' ran on a copy; sheet 'Report' saved to monthly-report-last-day-bug.xlsx
+  Excel 16.0 build 20430, 64-bit, UI language 1033, decimal separator ','; process ended-by-runner
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\excel\monthly-report-last-day-bug.xlsx
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-last-day-bug.excel-report.json
+compare monthly-report-xlsx: Mismatch: 8 differences (1 within tolerance)
+  golden: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\golden\monthly-report-2026-09.xlsx
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\excel\monthly-report-last-day-bug.xlsx
+  - row with Store=Central, column 'Orders' (cell B4): expected '4', found '3' (delta -1; no tolerance: exact match required).
+  - row with Store=Central, column 'Units' (cell C4): expected '9', found '8' (delta -1; no tolerance: exact match required).
+  - row with Store=Central, column 'Revenue' (cell D4): expected '92.71', found '60.71' (delta -32, outside the tolerance of ±0.005).
+  - row with Store=Central, column 'AvgOrderValue' (cell F4): expected '23.18', found '20.239999999999998' (delta -2.940000000000002, outside the tolerance of ±0.005).
+  - row with Store=Market, column 'Orders' (cell B5): expected '4', found '3' (delta -1; no tolerance: exact match required).
+  - row with Store=Market, column 'Units' (cell C5): expected '13', found '11' (delta -2; no tolerance: exact match required).
+  - row with Store=Market, column 'Revenue' (cell D5): expected '44.8', found '35.799999999999997' (delta -9.000000000000003, outside the tolerance of ±0.005).
+  - row with Store=Market, column 'AvgOrderValue' (cell F5): expected '11.2', found '11.93' (delta 0.73, outside the tolerance of ±0.005).
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-xlsx.report.md
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-xlsx.report.json
+ EXIT 1  fail
+
+│ Expected, found, delta and tolerance per cell.
+│ The one difference within tolerance is listed, not counted as a regression.
+
+ E4  A new version is delivered
+Each version is packaged at delivery: the workbook, its VBA as text with a manifest, and SHA256SUMS.
+Packaging checks the VBA text against the workbook; it needs no Excel.
+
+> New-Item -ItemType Directory -Force out/delivery, out/recovery | Out-Null
+
+
+> pwsh -File bin/steadylatch-check.ps1 -VbaDirectory demo/workbook/vba/lumen-monthly-report -VbaWorkbookPath demo/workbook/lumen-monthly-report.xlsm -CreateDeliveryPackage out/delivery/lumen-monthly-report-1.0.0.zip -ReportDirectory out/reports
+vba lumen-monthly-report: Match: 3 component(s), 1 file(s) and the workbook 'lumen-monthly-report.xlsm' agree with the manifest (exported 2026-09-28T23:44:53Z)
+  folder: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\workbook\vba\lumen-monthly-report
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-monthly-report.vba-report.json
+package lumen-monthly-report-1.0.0: Succeeded
+  packaged 'lumen-monthly-report.xlsm' and 2 VBA file(s) as 'lumen-monthly-report-1.0.0.zip' (folder 'lumen-monthly-report-1.0.0', sha256 81372f0fdfb12cfa10f46b99f92e26a074b46792cb915c43d42d89e8d1bf77d5)
+delivery lumen-monthly-report-1.0.0: Valid: 3 file(s) agree with SHA256SUMS and the VBA export of 'lumen-monthly-report.xlsm' agrees with its manifest
+  package: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\delivery\lumen-monthly-report-1.0.0.zip
+  sha256: 81372f0fdfb12cfa10f46b99f92e26a074b46792cb915c43d42d89e8d1bf77d5
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-monthly-report-1.0.0.delivery-report.json
+ EXIT 0  pass
+
+> pwsh -File bin/steadylatch-check.ps1 -VbaDirectory demo/workbook/vba/lumen-monthly-report-last-day-bug -VbaWorkbookPath demo/workbook/lumen-monthly-report-last-day-bug.xlsm -CreateDeliveryPackage out/delivery/lumen-monthly-report-1.1.0.zip -ReportDirectory out/reports
+vba lumen-monthly-report-last-day-bug: Match: 3 component(s), 1 file(s) and the workbook 'lumen-monthly-report-last-day-bug.xlsm' agree with the manifest (exported 2026-09-28T23:45:02Z)
+  folder: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\workbook\vba\lumen-monthly-report-last-day-bug
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-monthly-report-last-day-bug.vba-report.json
+package lumen-monthly-report-1.1.0: Succeeded
+  packaged 'lumen-monthly-report-last-day-bug.xlsm' and 2 VBA file(s) as 'lumen-monthly-report-1.1.0.zip' (folder 'lumen-monthly-report-1.1.0', sha256 09039cdb03ca208097bacb47b3eb0570c0c18e217ccbe07e99bce027361c3a01)
+delivery lumen-monthly-report-1.1.0: Valid: 3 file(s) agree with SHA256SUMS and the VBA export of 'lumen-monthly-report-last-day-bug.xlsm' agrees with its manifest
+  package: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\delivery\lumen-monthly-report-1.1.0.zip
+  sha256: 09039cdb03ca208097bacb47b3eb0570c0c18e217ccbe07e99bce027361c3a01
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-monthly-report-1.1.0.delivery-report.json
+ EXIT 0  pass
+ E4  A new version is delivered (continued)
+
+Version 1.1.0 is the workbook with the bug that E3 caught. Go back to 1.0.0, from its package:
+
+> Get-FileHash out/delivery/lumen-monthly-report-1.0.0.zip | Select-Object -ExpandProperty Hash
+81372F0FDFB12CFA10F46B99F92E26A074B46792CB915C43D42D89E8D1BF77D5
+
+> pwsh -File bin/steadylatch-check.ps1 -DeliveryPackagePath out/delivery/lumen-monthly-report-1.0.0.zip -RestoreTo out/recovery/lumen-monthly-report-1.0.0 -ReportDirectory out/reports
+delivery lumen-monthly-report-1.0.0: Valid: 3 file(s) agree with SHA256SUMS and the VBA export of 'lumen-monthly-report.xlsm' agrees with its manifest
+  package: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\delivery\lumen-monthly-report-1.0.0.zip
+  sha256: 81372f0fdfb12cfa10f46b99f92e26a074b46792cb915c43d42d89e8d1bf77d5
+restore lumen-monthly-report-1.0.0: Succeeded
+  restored 'lumen-monthly-report.xlsm' and 3 other file(s) of 'lumen-monthly-report-1.0.0.zip' to 'lumen-monthly-report-1.0.0' (workbook sha256 02dc67d328c4c4b4557a1df97d17959f3bb6c740032b85944f70ed5bb8d23a55)
+  folder: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\recovery\lumen-monthly-report-1.0.0
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\lumen-monthly-report-1.0.0.delivery-report.json
+ EXIT 0  pass
+
+The restored workbook is the file that was delivered, byte for byte:
+
+> Get-FileHash demo/workbook/lumen-monthly-report.xlsm, out/recovery/lumen-monthly-report-1.0.0/lumen-monthly-report.xlsm | Select-Object -ExpandProperty Hash
+02DC67D328C4C4B4557A1DF97D17959F3BB6C740032B85944F70ED5BB8D23A55
+02DC67D328C4C4B4557A1DF97D17959F3BB6C740032B85944F70ED5BB8D23A55
+ E4  A new version is delivered (continued)
+
+It runs in Excel and matches the approved golden again:
+
+> pwsh -File bin/steadylatch-check.ps1 -ConfigPath demo/compare/monthly-report-xlsx.compare.json -GoldenPath demo/golden/monthly-report-2026-09.xlsx -ReportDirectory out/reports -ExcelConfigPath demo/excel/monthly-report-restored.excel.json
+excel monthly-report-restored: Succeeded (macro BuildMonthlyReport of lumen-monthly-report.xlsm)
+  macro 'BuildMonthlyReport' of 'lumen-monthly-report.xlsm' ran on a copy; sheet 'Report' saved to monthly-report-restored.xlsx
+  Excel 16.0 build 20430, 64-bit, UI language 1033, decimal separator ','; process ended-by-runner
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\excel\monthly-report-restored.xlsx
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-restored.excel-report.json
+compare monthly-report-xlsx: Match: 0 differences (1 within tolerance)
+  golden: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\demo\golden\monthly-report-2026-09.xlsx
+  output: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\excel\monthly-report-restored.xlsx
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-xlsx.report.md
+  report: C:\sl-demo\steadylatch-reliability-kit-1.0.0-rc1-pro\out\reports\monthly-report-xlsx.report.json
+ EXIT 0  pass
+
+│ Restored into a new folder; the Kit never overwrites a file. Putting it back in use is your step.
+│ Import from VBA text also ships; like the export, it needs Excel's "Trust access to the VBA
+│ project object model", which this recording does not turn on.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+   Recorded with release candidate 1.0.0-rc1 of v1 (Pro package). All data in this demo is synthetic.
+   Tested: Microsoft 365 Excel 64-bit, Windows 11, PowerShell 7.6.
+   What exists and what is missing: docs/what-exists.md in the Kit.
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────
