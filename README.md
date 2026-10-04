@@ -6,6 +6,10 @@ This repository shows what the **SteadyLatch Automation Reliability Kit v1.0.0**
 
 There is no Kit code here, only the recorded demo, the text of a run and an explanation of each scenario.
 
+[![A frame of the launch teaser: the changed macro run on a copy, Mismatch: 8 differences, EXIT 1](demo/teaser-poster.jpg)](https://steadylatch.com/#teaser)
+
+*The 24-second teaser on [steadylatch.com](https://steadylatch.com/#teaser): one deleted character, and the Kit lists the cells that changed. Every terminal line in it comes from the recorded demo.*
+
 [![A frame of the demo: the output of a changed macro compared with the approved golden, eight differences listed cell by cell](demo/poster.jpg)](https://steadylatch.com/#demo)
 
 *Watch the demo on [steadylatch.com](https://steadylatch.com/#demo): about 4 minutes, no sound, captions on screen.*
